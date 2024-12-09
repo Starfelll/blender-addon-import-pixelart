@@ -18,7 +18,7 @@
 
 bl_info = {
 	"name": "Import Pixel Art",
-	"author": "Mathias Panzenböck",
+	"author": "Mathias Panzenböck, Starfelll",
 	"version": (1,  2, 1),
 	"blender": (2, 80, 0),
 	"location": "File > Import > Pixel Art",
@@ -135,6 +135,9 @@ class ImportPixelArt(Operator, ImportHelper):
 			('CUBES',   'Separate Cubes',
 			 "Separate cubes where each cube is its own object.\n"
 			 "Can be very slow!", "CUBE", 2),
+			('SOLID_MESH',   'Solid Mesh',
+			 ".\n", 
+			 "MOD_SOLIDIFY", 3),
 		),
 		name="Import As",
 		default='2D_MESH',
@@ -153,22 +156,27 @@ class ImportPixelArt(Operator, ImportHelper):
 		layout = self.layout
 
 		layout.prop(self, 'import_as')
-		layout.prop(self, 'use_nodes')
 		layout.prop(self, 'reuse_materials')
 		layout.prop(self, 'auto_scale')
 
 		layout.prop(self, 'parent_name')
-		layout.prop(self, 'cube_name')
-		layout.prop(self, 'mesh_name')
-		layout.prop(self, 'material_name')
 
+		if self.import_as == 'CUBES':
+			layout.prop(self, 'cube_name')
+			layout.prop(self, 'mesh_name')
+
+		if self.import_as == 'SOLID_MESH':
+			pass
+		else:
+			layout.prop(self, 'material_name')
+			layout.prop(self, 'use_nodes')
+		
 		text = (
 			"Bigger images will be slow and might freeze Blender during importing.\n"
 			"To prevent freezes keep to these approximate image size limits:\n"
 			"• 2D Mesh: 1280x960 or 1,500,000 pixels\n"
 			"• Separate Cubes: 70x70 or 5,000 pixels"
 		)
-
 		width = (context.region.width / bpy.context.preferences.view.ui_scale) * (122 / bpy.context.preferences.system.dpi)
 		lines = wrap_lines(text, width - 2, True)
 		icon = 'INFO'
@@ -398,8 +406,9 @@ class ImportPixelArt(Operator, ImportHelper):
 							height = new_height
 							pixels = new_pixels
 		finally:
-			image.user_clear()
-			bpy.data.images.remove(image)
+			if import_as != 'SOLID_MESH':
+				image.user_clear()
+				bpy.data.images.remove(image)
 
 		for other in bpy.context.selected_objects:
 			other.select_set(False)
@@ -563,6 +572,157 @@ class ImportPixelArt(Operator, ImportHelper):
 
 			obj.select_set(True)
 			bpy.context.view_layer.objects.active = obj
+
+		elif import_as == 'SOLID_MESH':
+
+			pixel_verts = []
+			pixel_edges = []
+			pixel_faces = []
+			pixel_uv_offsets = []
+			vert_index = 0
+
+			tickness_half = 1
+
+			mesh = bpy_data_meshes_new(obj_name)
+			
+			params = dict(filename=filename, color='', use_nodes=struse_nodes)
+
+
+			def add_face(vert1, vert2, vert3, vert4, uv):
+				pixel_verts.append(vert1)
+				pixel_verts.append(vert2)
+				pixel_verts.append(vert3)
+				pixel_verts.append(vert4)
+				pixel_faces.append((vert_index, vert_index + 1, vert_index + 2, vert_index + 3))
+				pixel_uv_offsets.append(uv)
+				return vert_index + 4
+
+			def get_color(x, y):
+				offset = y * channels * width
+				r = g = b = 1
+				if channels == 1:
+					r = g = b = pixels[offset + x]
+				elif channels == 3:
+					index = offset + x * channels
+					r = pixels[index]
+					g = pixels[index + 1]
+					b = pixels[index + 2]
+				else:
+					index = offset + x * channels
+					r = pixels[index]
+					g = pixels[index + 1]
+					b = pixels[index + 2]
+					a = pixels[index + 3]
+					if a == 0:
+						return None
+				return (r, g, b, a)
+
+			for y in range(height):
+				for x in range(width):
+					color = get_color(x, y)
+					if color is None: continue
+
+					vert_index = add_face(
+						(x,   y,   tickness_half),
+						(x+1, y,   tickness_half),
+						(x+1, y+1, tickness_half),
+						(x,   y+1, tickness_half),
+						(x,y),
+					)
+					vert_index = add_face(
+						(x,   y+1, -tickness_half),
+						(x+1, y+1, -tickness_half),
+						(x+1, y,   -tickness_half),
+						(x,   y,   -tickness_half),
+						(x,y),
+					)
+				
+					side_x = x + 1
+					side_y = y
+					if x >= width or get_color(side_x, side_y) is None:
+						vert_index = add_face( #right
+							(x+1, y,    tickness_half),
+							(x+1, y,   -tickness_half),
+							(x+1, y+1, -tickness_half),
+							(x+1, y+1,  tickness_half),
+							(x,y),
+						)
+					
+					side_x = x - 1
+					if side_x < 0 or get_color(side_x, side_y) is None:
+						vert_index = add_face(#left
+							(x, y+1,  tickness_half),
+							(x, y+1, -tickness_half),
+							(x, y,   -tickness_half),
+							(x, y,    tickness_half),
+							(x,y),
+						)
+
+					side_x = x
+					side_y = y - 1
+					if side_y < 0 or get_color(side_x, side_y) is None:
+						vert_index = add_face( #down
+							(x,   y, -tickness_half),
+							(x+1, y, -tickness_half),
+							(x+1, y,  tickness_half),
+							(x,	  y,  tickness_half),
+							(x,y),
+						)
+
+					side_y = y + 1
+					if side_y >= height or get_color(side_x, side_y) is None:
+						vert_index = add_face(
+							(x,   y+1,  tickness_half),
+							(x+1, y+1,  tickness_half),
+							(x+1, y+1, -tickness_half),
+							(x,   y+1, -tickness_half),
+							(x,y),
+						)
+
+			mesh.from_pydata(pixel_verts, pixel_edges, pixel_faces)
+			mesh.uv_layers.new()
+			
+			material = None
+			if reuse_materials:
+				material = bpy_data_materials_get(obj_name)
+			if material is None:
+				material = bpy_data_materials_new(name=obj_name)
+				material.use_nodes = True
+				nodes = material.node_tree.nodes
+				diffuse_node = nodes[0]
+				tex_node: bpy.types.ShaderNodeTexImage = nodes.new("ShaderNodeTexImage")
+				tex_node.image = image
+				tex_node.interpolation = "Closest"
+				tex_node.location = (-300, 300)
+
+				material.node_tree.links.new(diffuse_node.inputs[0],tex_node.outputs[0])
+				material.node_tree.links.new(diffuse_node.inputs["Alpha"],tex_node.outputs["Alpha"])
+			mesh.materials.append(material)
+
+			mesh.update()
+
+			obj = bpy_data_objects_new(name=obj_name, object_data=mesh)
+			bpy_context_collection_objects_link(obj)
+			obj.select_set(True)
+			bpy.context.view_layer.objects.active = obj
+
+			bpy.ops.object.mode_set(mode="EDIT", toggle=False)
+			bm = bmesh.from_edit_mesh(mesh)
+			uv_layer = bm.loops.layers.uv.verify()
+			uv_x_scale = 1 / width
+			uv_y_scale = 1 / height
+			pixel_index = 0
+			for f in bm.faces:
+				uv_offset = pixel_uv_offsets[pixel_index]
+				for l in f.loops:
+					luv = l[uv_layer]
+					luv.uv = (
+						(luv.uv[0]+uv_offset[0]) * uv_x_scale, 
+						(luv.uv[1]+uv_offset[1]) * uv_y_scale)
+				pixel_index+=1
+			bmesh.update_edit_mesh(mesh)
+			bpy.ops.mesh.remove_doubles()
+			bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
 
 		else:
 			assert False, f"Illegal import_as value: {import_as}"
