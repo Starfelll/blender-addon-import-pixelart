@@ -578,23 +578,25 @@ class ImportPixelArt(Operator, ImportHelper):
 			pixel_verts = []
 			pixel_edges = []
 			pixel_faces = []
+			pixel_faces_normal_filp = []
 			pixel_uv_offsets = []
 			vert_index = 0
 
-			tickness_half = 1
+			thickness_half = 1
 
 			mesh = bpy_data_meshes_new(obj_name)
 			
 			params = dict(filename=filename, color='', use_nodes=struse_nodes)
 
 
-			def add_face(vert1, vert2, vert3, vert4, uv):
+			def add_face(vert1, vert2, vert3, vert4, uv, flip_normal = False):
 				pixel_verts.append(vert1)
 				pixel_verts.append(vert2)
 				pixel_verts.append(vert3)
 				pixel_verts.append(vert4)
 				pixel_faces.append((vert_index, vert_index + 1, vert_index + 2, vert_index + 3))
 				pixel_uv_offsets.append(uv)
+				pixel_faces_normal_filp.append(flip_normal)
 				return vert_index + 4
 
 			def get_color(x, y):
@@ -623,38 +625,38 @@ class ImportPixelArt(Operator, ImportHelper):
 					if color is None: continue
 
 					vert_index = add_face(
-						(x,   y,   tickness_half),
-						(x+1, y,   tickness_half),
-						(x+1, y+1, tickness_half),
-						(x,   y+1, tickness_half),
+						(x,   y,   thickness_half),
+						(x+1, y,   thickness_half),
+						(x+1, y+1, thickness_half),
+						(x,   y+1, thickness_half),
 						(x,y),
 					)
 					vert_index = add_face(
-						(x,   y+1, -tickness_half),
-						(x+1, y+1, -tickness_half),
-						(x+1, y,   -tickness_half),
-						(x,   y,   -tickness_half),
-						(x,y),
+						(x,   y,   -thickness_half),
+						(x+1, y,   -thickness_half),
+						(x+1, y+1, -thickness_half),
+						(x,   y+1, -thickness_half),
+						(x,y), True
 					)
 				
 					side_x = x + 1
 					side_y = y
 					if x >= width or get_color(side_x, side_y) is None:
 						vert_index = add_face( #right
-							(x+1, y,    tickness_half),
-							(x+1, y,   -tickness_half),
-							(x+1, y+1, -tickness_half),
-							(x+1, y+1,  tickness_half),
-							(x,y),
+							(x+1, y,   -thickness_half),
+							(x+1, y,    thickness_half),
+							(x+1, y+1,  thickness_half),
+							(x+1, y+1, -thickness_half),
+							(x,y), True
 						)
 					
 					side_x = x - 1
 					if side_x < 0 or get_color(side_x, side_y) is None:
 						vert_index = add_face(#left
-							(x, y+1,  tickness_half),
-							(x, y+1, -tickness_half),
-							(x, y,   -tickness_half),
-							(x, y,    tickness_half),
+							(x, y,   -thickness_half),
+							(x, y,    thickness_half),
+							(x, y+1,  thickness_half),
+							(x, y+1, -thickness_half),
 							(x,y),
 						)
 
@@ -662,21 +664,21 @@ class ImportPixelArt(Operator, ImportHelper):
 					side_y = y - 1
 					if side_y < 0 or get_color(side_x, side_y) is None:
 						vert_index = add_face( #down
-							(x,   y, -tickness_half),
-							(x+1, y, -tickness_half),
-							(x+1, y,  tickness_half),
-							(x,	  y,  tickness_half),
-							(x,y),
+							(x,	  y,  thickness_half),
+							(x+1, y,  thickness_half),				
+							(x+1, y, -thickness_half),
+							(x,   y, -thickness_half),
+							(x,y), True
 						)
 
 					side_y = y + 1
 					if side_y >= height or get_color(side_x, side_y) is None:
-						vert_index = add_face(
-							(x,   y+1,  tickness_half),
-							(x+1, y+1,  tickness_half),
-							(x+1, y+1, -tickness_half),
-							(x,   y+1, -tickness_half),
-							(x,y),
+						vert_index = add_face(							
+							(x,   y+1, -thickness_half),				
+							(x+1, y+1, -thickness_half),
+							(x+1, y+1,  thickness_half),
+							(x,	  y+1,  thickness_half),
+							(x,y), True
 						)
 
 			mesh.from_pydata(pixel_verts, pixel_edges, pixel_faces)
@@ -709,11 +711,14 @@ class ImportPixelArt(Operator, ImportHelper):
 			bpy.ops.object.mode_set(mode="EDIT", toggle=False)
 			bm = bmesh.from_edit_mesh(mesh)
 			uv_layer = bm.loops.layers.uv.verify()
+
 			uv_x_scale = 1 / width
 			uv_y_scale = 1 / height
 			pixel_index = 0
 			for f in bm.faces:
 				uv_offset = pixel_uv_offsets[pixel_index]
+				if pixel_faces_normal_filp[pixel_index]:
+					f.normal_flip()
 				for l in f.loops:
 					luv = l[uv_layer]
 					luv.uv = (
