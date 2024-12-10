@@ -34,6 +34,7 @@ from time import perf_counter
 from math import nan
 import os.path
 import bpy
+import bmesh
 
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
