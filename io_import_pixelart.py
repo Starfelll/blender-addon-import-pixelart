@@ -125,7 +125,7 @@ class ImportPixelArt(Operator, ImportHelper):
 	bl_label   = "Import Pixel Art"
 	bl_options = {'REGISTER', 'UNDO'}
 
-	filter_glob: StringProperty(default="*.png;*.gif;*.bmp", options={'HIDDEN'})
+	filter_glob: StringProperty(default="*.png;*.gif;*.bmp;*.psd", options={'HIDDEN'})
 
 	import_as: EnumProperty(
 		items=(
@@ -740,7 +740,7 @@ class ImportPixelArt(Operator, ImportHelper):
 
 
 def menu_func_import(self, context):
-	self.layout.operator(ImportPixelArt.bl_idname, text="Import Pixel Art (.png/.gif/.bmp)")
+	self.layout.operator(ImportPixelArt.bl_idname, text="Import Pixel Art (.png/.gif/.bmp/.psd)")
 
 
 def register():
